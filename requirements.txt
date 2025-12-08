@@ -1,0 +1,14 @@
+# Core dependencies for hiero-transformer
+# PyTorch (install CUDA version separately if needed: pip install torch --index-url https://download.pytorch.org/whl/cu124)
+torch>=2.0.0
+transformers>=4.30.0
+datasets==1.18.4
+pandas>=2.0.0
+numpy>=1.24.0
+tqdm>=4.65.0
+
+# Dependencies for transformers
+tokenizers>=0.13.0
+safetensors>=0.3.0
+huggingface-hub>=0.16.0
+

@@ -18,7 +18,7 @@ test_data = processed_data(test_data)
 
 
 # Load model to generate predictions
-model = M2M100ForConditionalGeneration.from_pretrained("ea9all").to("cuda:0").eval()
+model = M2M100ForConditionalGeneration.from_pretrained("mattiadc/hiero-transformer").to("cuda:0").eval()
 tokenizer = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M")
 
 # Produce predictions

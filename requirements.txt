@@ -3,7 +3,7 @@
 torch>=2.0.0
 transformers>=4.30.0
 datasets==1.18.4
-pandas>=2.0.0
+# pandas>=2.0.0  # INSTALLED VIA CONDA: conda install -c conda-forge pandas --yes (pip build fails with old GCC 4.8.5)
 numpy>=1.24.0
 tqdm>=4.65.0
 

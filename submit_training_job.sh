@@ -13,7 +13,7 @@ module load cuda/12.4.1
 source /mnt/lustre/helios-home/morovkat/miniconda3/etc/profile.d/conda.sh
 conda activate hiero-transformer
 
-cd /mnt/lustre/helios-home/morovkat/hiero-transformer_fork
+cd /mnt/lustre/helios-home/morovkat/hiero-transformer
 
 python train_minimal.py
 

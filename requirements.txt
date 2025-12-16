@@ -11,4 +11,5 @@ tqdm>=4.65.0
 tokenizers>=0.13.0
 safetensors>=0.3.0
 huggingface-hub>=0.16.0
+sentencepiece>=0.1.99  # Required for M2M100Tokenizer
 

@@ -2,6 +2,7 @@ import copy
 import json
 import shutil
 import os
+import argparse
 
 import numpy as np
 import torch
@@ -91,10 +92,22 @@ def processed_data_minimal(data, lang_pairs):
     return result
 
 
+# Parse arguments
+parser = argparse.ArgumentParser(description='Train hiero-transformer model')
+parser.add_argument('--checkpoint', type=str, default=None,
+                    help='Path to checkpoint directory to continue training from')
+parser.add_argument('--epochs', type=int, default=20,
+                    help='Number of epochs to train')
+parser.add_argument('--batch_size', type=int, default=16,
+                    help='Batch size')
+parser.add_argument('--eval_period', type=int, default=1000,
+                    help='Evaluation period in steps')
+args = parser.parse_args()
+
 # Epochs, batch, periods variables
-epochs = 20
-batch_size = 16
-eval_period = 1000
+epochs = args.epochs
+batch_size = args.batch_size
+eval_period = args.eval_period
 total_steps = 0
 best_eval_loss = float("inf")
 max_models = 1
@@ -162,12 +175,38 @@ if os.path.exists("translations_de2en.json"):
             )
 
 
-# loading model
-model = M2M100ForConditionalGeneration.from_pretrained("facebook/m2m100_418M").to(
-    "cuda:0"
-)
-tokenizer = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M")
-optimizer = torch.optim.Adam(model.parameters(), lr=3e-5)
+# Store protected checkpoint path (absolute path for comparison)
+protected_checkpoint = None
+if args.checkpoint:
+    protected_checkpoint = os.path.abspath(args.checkpoint)
+    print(f"Loading model from checkpoint: {args.checkpoint}")
+    print(f"Protected checkpoint (will not be deleted): {protected_checkpoint}")
+    model = M2M100ForConditionalGeneration.from_pretrained(args.checkpoint).to("cuda:0")
+    tokenizer = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M")
+    
+    # Try to load training state if available
+    training_state_path = os.path.join(args.checkpoint, "training_state.json")
+    if os.path.exists(training_state_path):
+        with open(training_state_path, 'r') as f:
+            training_state = json.load(f)
+            total_steps = training_state.get("total_steps", 0)
+            best_eval_loss = training_state.get("best_eval_loss", float("inf"))
+            print(f"Resuming from step {total_steps}, best loss: {best_eval_loss}")
+    
+    # Try to load optimizer state if available
+    optimizer_state_path = os.path.join(args.checkpoint, "optimizer.pt")
+    optimizer = torch.optim.Adam(model.parameters(), lr=3e-5)
+    if os.path.exists(optimizer_state_path):
+        try:
+            optimizer.load_state_dict(torch.load(optimizer_state_path))
+            print("Loaded optimizer state from checkpoint")
+        except Exception as e:
+            print(f"Could not load optimizer state: {e}, starting with fresh optimizer")
+else:
+    print("Starting training from base model")
+    model = M2M100ForConditionalGeneration.from_pretrained("facebook/m2m100_418M").to("cuda:0")
+    tokenizer = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M")
+    optimizer = torch.optim.Adam(model.parameters(), lr=3e-5)
 
 
 # Training
@@ -246,13 +285,33 @@ for epoch in range(epochs):
                     )
                     fname = f"checkpoint_total_steps={total_steps}_loss={total_eval_loss / total_eval_tokens:.2f}"
                     model.save_pretrained(fname)
+                    
+                    # Save training state
+                    training_state = {
+                        "total_steps": total_steps,
+                        "best_eval_loss": total_eval_loss,
+                        "epoch": epoch + 1
+                    }
+                    with open(os.path.join(fname, "training_state.json"), "w") as f:
+                        json.dump(training_state, f)
+                    
+                    # Save optimizer state
+                    torch.save(optimizer.state_dict(), os.path.join(fname, "optimizer.pt"))
+                    
                     topk_models.append(fname)
                     best_eval_loss = total_eval_loss
 
                     if len(topk_models) > max_models:
-                        fname = topk_models.pop(0)
-                        shutil.rmtree(fname)
-                        print(f"Removing {fname}")
+                        # Remove oldest checkpoint, but skip if it's the protected checkpoint
+                        while topk_models:
+                            fname = topk_models.pop(0)
+                            fname_abs = os.path.abspath(fname)
+                            if protected_checkpoint and fname_abs == protected_checkpoint:
+                                print(f"Skipping deletion of protected checkpoint: {fname}")
+                                continue
+                            shutil.rmtree(fname)
+                            print(f"Removing {fname}")
+                            break
 
 # Last check before the end
 if validation_data_batched:
@@ -282,13 +341,33 @@ if validation_data_batched:
         )
         fname = f"checkpoint_total_steps={total_steps}_loss={total_eval_loss / total_eval_tokens:.2f}"
         model.save_pretrained(fname)
+        
+        # Save training state
+        training_state = {
+            "total_steps": total_steps,
+            "best_eval_loss": total_eval_loss,
+            "epoch": epochs
+        }
+        with open(os.path.join(fname, "training_state.json"), "w") as f:
+            json.dump(training_state, f)
+        
+        # Save optimizer state
+        torch.save(optimizer.state_dict(), os.path.join(fname, "optimizer.pt"))
+        
         topk_models.append(fname)
         best_eval_loss = total_eval_loss
 
         if len(topk_models) > max_models:
-            fname = topk_models.pop(0)
-            shutil.rmtree(fname)
-            print(f"Removing {fname}")
+            # Remove oldest checkpoint, but skip if it's the protected checkpoint
+            while topk_models:
+                fname = topk_models.pop(0)
+                fname_abs = os.path.abspath(fname)
+                if protected_checkpoint and fname_abs == protected_checkpoint:
+                    print(f"Skipping deletion of protected checkpoint: {fname}")
+                    continue
+                shutil.rmtree(fname)
+                print(f"Removing {fname}")
+                break
 
 print("Training completed!")
 

@@ -14,16 +14,21 @@ raw_data = load_data_from_folder("test_ramses")
 
 # Simple processing for ramses data (metadata fields are empty)
 # Extract ea -> tnt (transliteration) based on presence of source and transliteration fields
+# Keep track of all entries to maintain alignment
 test_data = {"ea": {"tnt": []}}
+valid_entries = []  # Track which entries are valid (for alignment)
 for datapoint in raw_data:
+    is_valid = False
     if "source" in datapoint and "transliteration" in datapoint:
         if datapoint["source"] != "" and datapoint["transliteration"] != "":
             test_data["ea"]["tnt"].append({
                 "source": datapoint["source"],
                 "target": datapoint["transliteration"]
             })
+            is_valid = True
+    valid_entries.append(is_valid)
 
-print(f"Processed {len(test_data['ea']['tnt'])} datapoints for ea -> tnt")
+print(f"Processed {len(test_data['ea']['tnt'])} valid datapoints out of {len(raw_data)} total for ea -> tnt")
 
 
 # Load model to generate predictions
@@ -59,15 +64,28 @@ for src_lang, values in test_data.items():
                         generated_tokens, skip_special_tokens=True
                     )[0]
 
-# Save predictions to file
+# Save predictions to file (maintaining alignment with original data)
 output_file = "predictions.txt"
 print(f"\nSaving predictions to {output_file}...")
 with open(output_file, 'w', encoding='utf-8') as f:
+    # Get predictions in order
+    predictions = []
     for src_lang, values in test_data.items():
         for tgt_lang, data in values.items():
             for element in data:
-                f.write(element["prediction"] + "\n")
-print(f"Saved {sum(len(data) for values in test_data.values() for data in values.values())} predictions to {output_file}")
+                predictions.append(element["prediction"])
+    
+    # Write predictions maintaining alignment with original data
+    pred_idx = 0
+    for is_valid in valid_entries:
+        if is_valid:
+            f.write(predictions[pred_idx] + "\n")
+            pred_idx += 1
+        else:
+            # Write empty line for filtered entries to maintain alignment
+            f.write("\n")
+    
+print(f"Saved {len(predictions)} predictions (with {len(valid_entries) - len(predictions)} empty lines for filtered entries) to {output_file}")
 
 # Calculate metrics
 metrics = {
@@ -82,14 +100,16 @@ for src_lang, values in test_data.items():
         if len(data) == 0:
             continue
         for element in data:
+            # Normalize: strip punctuation, lowercase, split
+            # Note: JSON targets are in word-separated format (no underscores)
+            # This matches the format of predictions from the model
+            pred_tokens = element["prediction"].strip(string.punctuation).lower().split()
+            ref_tokens = element["target"].strip(string.punctuation).lower().split()
+            
             for metric in metrics[src_lang][tgt_lang].values():
                 metric.add_batch(
-                    predictions=[
-                        element["prediction"].strip(string.punctuation).lower().split()
-                    ],
-                    references=[
-                        [element["target"].strip(string.punctuation).lower().split()]
-                    ],
+                    predictions=[pred_tokens],
+                    references=[[ref_tokens]],
                 )
 
 computed_metrics = {
